@@ -44,8 +44,8 @@
 #define DENSITY_VALUE 40
 //#define USE_HDFS
 // #define USE_ASYNC
-#define ZMQNUM 16
-#define CMPNUM 23
+#define ZMQNUM 12
+#define CMPNUM 24
 
 int COMPRESS_NETWORK_LEVEL;  //0, 1, 2
 int COMPRESS_CACHE_LEVEL; //0, 1, 2, 3

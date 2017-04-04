@@ -306,19 +306,18 @@ void GraphPS<T>::init(std::string DataPath,
   int32_t n = std::ceil(_PartitionNum*1.0/_num_workers);
   _PartitionID_Start = (_my_rank*n < _PartitionNum) ? _my_rank*n:-1;
   _PartitionID_End = ((1+_my_rank)*n > _PartitionNum) ? _PartitionNum:(1+_my_rank)*n;
-  LOG(INFO) << "Rank " << _my_rank << " "
-            << " With Partitions From " << _PartitionID_Start << " To " << _PartitionID_End;
-
-  // int placed_rank = 0;
-  // for (int i = 0; i < _PartitionNum; i++) {
-  //   placed_rank = i % _num_workers;
-  //   if (_my_rank == placed_rank) {
-  //     _Allocated_Partition.push_back(i);
-  //   }
-  // }
+  
+  /*int p_s[9] = {0,   580,  1146, 1722, 2291, 2853, 3414, 4014, 4570};
+  int p_e[9] = {579, 1145, 1721, 2290, 2852, 3413, 4013, 4569, 5095};
+  for (int i = p_s[_my_rank]; i <= p_e[_my_rank]; i++) {
+    _Allocated_Partition.push_back(i);
+  }*/
   for (int i = _PartitionID_Start; i < _PartitionID_End; i++) {
     _Allocated_Partition.push_back(i);
   }
+
+  LOG(INFO) << "Rank " << _my_rank << " "
+            << " With Partitions From " << _PartitionID_Start << " To " << _PartitionID_End;
 
   _EdgeCache.reserve(_PartitionNum*2/_num_workers);
   for (int i = 0; i < _ThreadNum; i++) {
@@ -328,6 +327,9 @@ void GraphPS<T>::init(std::string DataPath,
     _Edge_Buffer[i] = NULL;
     _Edge_Buffer_Lock[i] = 0;
     _Edge_Buffer_Len[i] = 0;
+    _Uncompressed_Buffer[i] = NULL;
+    _Uncompressed_Buffer_Lock[i] = 0;
+    _Uncompressed_Buffer_Len[i] = 0;
   }
   int32_t data_size = GetDataSize(DataPath) * 1.0 / 1024 / 1024 / 1024; //GB 
   int32_t cache_size = _num_workers * EDGE_CACHE_SIZE / 1024; //GB
@@ -337,7 +339,7 @@ void GraphPS<T>::init(std::string DataPath,
   else
     COMPRESS_CACHE_LEVEL = 2;
   //#########################
-  COMPRESS_CACHE_LEVEL = 0;
+  COMPRESS_CACHE_LEVEL = 1;
   LOG(INFO) << "data size "  << data_size << " GB, "
             << "cache size " << cache_size << " GB, "
             << "compress level " << COMPRESS_CACHE_LEVEL;
@@ -435,7 +437,7 @@ void GraphPS<T>::run() {
     }
     std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
     int local_comp_time = std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count();
-    // LOG(INFO) << "Iter: " << step << " Worker: " << _my_rank << " Use: " << local_comp_time;
+    LOG(INFO) << "Iter: " << step << " Worker: " << _my_rank << " Use: " << local_comp_time;
 
     barrier_workers();
     int changed_num = 0;
