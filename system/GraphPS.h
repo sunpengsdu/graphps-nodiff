@@ -59,7 +59,7 @@ bool comp_pagerank(const int32_t P_ID,
 #ifdef USE_ASYNC
     VertexData[start_id+i] = rel;
 #endif
-    if (rel != 0) {
+    if (rel != VertexData[start_id+i]) {
       changed_num++;
     }
   }
@@ -81,7 +81,7 @@ bool comp_pagerank(const int32_t P_ID,
 
   _Computing_Num--;
   if (changed_num > 0)
-    graphps_sendall<T>(std::ref(result), changed_num);
+    graphps_sendall<T>(std::ref(result), changed_num, VertexData+start_id);
 
   // std::chrono::steady_clock::time_point t4 = std::chrono::steady_clock::now();
   // int commu_time = std::chrono::duration_cast<std::chrono::milliseconds>(t4-t3).count();
@@ -137,7 +137,7 @@ bool comp_sssp(const int32_t P_ID,
 #ifdef USE_ASYNC
     VertexData[start_id+i] = min;
 #endif
-    if (min != 0) {
+    if (min != VertexData[start_id+i]) {
       changed_num++;
     }
   }
@@ -156,7 +156,8 @@ bool comp_sssp(const int32_t P_ID,
 
   _Computing_Num--;
   if (changed_num > 0) {
-    graphps_sendall<T>(std::ref(result), changed_num);
+    // graphps_sendall<T>(std::ref(result), changed_num);
+    graphps_sendall<T>(std::ref(result), changed_num, VertexData+start_id);
   }
   return true;
 }
@@ -205,7 +206,7 @@ bool comp_cc(const int32_t P_ID,
 #ifdef USE_ASYNC
     VertexData[start_id+i] = max;
 #endif
-    if (max != 0) {
+    if (max != VertexData[start_id+i]) {
       changed_num++;
     }
   }
@@ -224,7 +225,8 @@ bool comp_cc(const int32_t P_ID,
 
   _Computing_Num--;
   if (changed_num > 0)
-    graphps_sendall<T>(std::ref(result), changed_num);
+    // graphps_sendall<T>(std::ref(result), changed_num);
+    graphps_sendall<T>(std::ref(result), changed_num, VertexData+start_id);
   return true;
 }
 
@@ -451,16 +453,40 @@ void GraphPS<T>::run() {
       _VertexData[result_id] = _VertexDataNew[result_id];
 #endif
     }
-
     updated_ratio = changed_num * 1.0 / _VertexNum;
     MPI_Bcast(&updated_ratio, 1, MPI_FLOAT, 0, MPI_COMM_WORLD);
+    int missed_num = _Missed_Num;
+    int total_missed_num = _Missed_Num;
+    int cache_size = _EdgeCache_Size;
+    int total_cache_size = _EdgeCache_Size;
+    int cache_size_uncompress = _EdgeCache_Size_Uncompress;
+    int total_cache_size_uncompress = _EdgeCache_Size_Uncompress;
+    long network_compress = _Network_Compressed;
+    long network_uncompress = _Network_Uncompressed;
+    long total_network_compress = _Network_Compressed;
+    long total_network_uncompress = _Network_Uncompressed;
+    ///*
+    MPI_Reduce(&missed_num, &total_missed_num, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&cache_size, &total_cache_size, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&cache_size_uncompress, &total_cache_size_uncompress, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&network_compress, &total_network_compress, 1, MPI_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&network_uncompress, &total_network_uncompress, 1, MPI_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+    //*/
+    _Missed_Num = 0;
+    _Network_Compressed = 0;
+    _Network_Uncompressed = 0;
     stop_time_comp();
     if (_my_rank==0)
       LOG(INFO) << "Iteration: " << step
                 << ", uses "<< COMP_TIME
                 << " ms, Update " << changed_num
-                << ", Ratio " << updated_ratio;
-    if (changed_num == 0) {
+                << ", Ratio " << updated_ratio
+                << ", Miss " << total_missed_num
+                << ", Cache(MB) " << total_cache_size
+                << ", Before(MB) " << total_cache_size_uncompress
+                << ", Compress Net(MB) " << total_network_compress*1.0/1024/1024
+                << ", Uncompress Net(MB) " << total_network_uncompress*1.0/1024/1024;
+    if (changed_num == 0 && step > 1) {
       break;
     }
   }

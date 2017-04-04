@@ -53,7 +53,7 @@ void graphps_send(const char * data, const int length, const int rank) {
 }
 
 template<class T>
-void graphps_sendall(std::vector<T> & data_vector, int32_t changed_num) {
+void graphps_sendall(std::vector<T> & data_vector, int32_t changed_num, const T* VertexData) {
   int  omp_id = omp_get_thread_num();
   assert (_Send_Buffer_Lock[omp_id] == 0);
   _Send_Buffer_Lock[omp_id]++;
@@ -65,7 +65,7 @@ void graphps_sendall(std::vector<T> & data_vector, int32_t changed_num) {
   int32_t changed_num_verify = 0;
   if (density < DENSITY_VALUE) {
     for (int32_t k=0; k<data_vector.size()-5; k++) {
-      if (data_vector[k] != 0) {
+      if (data_vector[k] != VertexData[k]) {
         sparsedata_vector.push_back(k);
         sparsedata_vector.push_back(data_vector[k]);
         changed_num_verify++;
@@ -96,6 +96,8 @@ void graphps_sendall(std::vector<T> & data_vector, int32_t changed_num) {
       int target_rank = random_rank[rank];
       if (target_rank != _my_rank)
         zmq_send(data, length, target_rank,  0);
+        _Network_Uncompressed.fetch_add(sizeof(T)*data_vector.size(), std::memory_order_relaxed);
+        _Network_Compressed.fetch_add(length, std::memory_order_relaxed);
     }
   } else if (COMPRESS_NETWORK_LEVEL == 1) {
     size_t max_compressed_length = snappy::MaxCompressedLength(length);
@@ -112,6 +114,8 @@ void graphps_sendall(std::vector<T> & data_vector, int32_t changed_num) {
       int target_rank = random_rank[rank];
       if (target_rank != _my_rank)
         zmq_send(compressed_data, compressed_length, target_rank, 0);
+        _Network_Uncompressed.fetch_add(sizeof(T)*data_vector.size(), std::memory_order_relaxed);
+        _Network_Compressed.fetch_add(compressed_length, std::memory_order_relaxed);
     }
   } else if (COMPRESS_NETWORK_LEVEL > 1) {
     size_t buf_size = compressBound(length);
@@ -135,6 +139,8 @@ void graphps_sendall(std::vector<T> & data_vector, int32_t changed_num) {
       int target_rank = random_rank[rank];
       if (target_rank != _my_rank)
         zmq_send(compressed_data, compressed_length, target_rank, 0);
+        _Network_Uncompressed.fetch_add(sizeof(T)*data_vector.size(), std::memory_order_relaxed);
+        _Network_Compressed.fetch_add(compressed_length, std::memory_order_relaxed);
     }
   } else {
     assert (1 == 0);
