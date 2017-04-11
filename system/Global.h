@@ -40,12 +40,12 @@
 #define ZMQ_PORT 15555
 #define ZMQ_BUFFER 50*1024*1024
 #define GPS_INF 10000
-#define EDGE_CACHE_SIZE 60*1024 //MB
-#define DENSITY_VALUE 40
+#define EDGE_CACHE_SIZE 80*1024 //MB
+#define DENSITY_VALUE 20
 //#define USE_HDFS
 // #define USE_ASYNC
-#define ZMQNUM 12
-#define CMPNUM 24
+#define ZMQNUM 23
+#define CMPNUM 23
 
 int COMPRESS_NETWORK_LEVEL;  //0, 1, 2
 int COMPRESS_CACHE_LEVEL; //0, 1, 2, 3
@@ -79,6 +79,7 @@ std::atomic<int32_t> _Computing_Num;
 std::atomic<int32_t> _Missed_Num;
 std::atomic<long> _Network_Compressed;
 std::atomic<long> _Network_Uncompressed;
+std::atomic<int32_t> _Pending_Request;
 std::unordered_map<int, char*> _Send_Buffer;
 std::unordered_map<int, size_t> _Send_Buffer_Len;
 std::unordered_map<int, std::atomic<int>> _Send_Buffer_Lock;
@@ -88,6 +89,7 @@ std::unordered_map<int, std::atomic<int>> _Edge_Buffer_Lock;
 std::unordered_map<int, char*> _Uncompressed_Buffer;
 std::unordered_map<int, size_t> _Uncompressed_Buffer_Len;
 std::unordered_map<int, std::atomic<int>> _Uncompressed_Buffer_Lock;
+std::unordered_map<int, std::unordered_map<int, void*>> _Socket_Pool;
 
 size_t GetDataSize(std::string dir_name) {
   DIR *d;
@@ -270,6 +272,13 @@ void finalize_workers() {
     delete [] (_Edge_Buffer[i]);
     delete [] (_Uncompressed_Buffer[i]);
   }
+  for (auto& Sockets:_Socket_Pool) {
+    for (auto & Socket: Sockets.second) {
+      zmq_close(Socket.second);
+    }
+  }
+
+
   MPI_Finalize();
 }
 
@@ -332,6 +341,7 @@ void init_workers() {
   _EdgeCache_Size_Uncompress = 0;
   _Computing_Num = 0;
   _Missed_Num = 0;
+  _Pending_Request = 0;
   _Network_Compressed = 0;
   _Network_Uncompressed = 0;
   barrier_workers();

@@ -339,7 +339,7 @@ void GraphPS<T>::init(std::string DataPath,
   else
     COMPRESS_CACHE_LEVEL = 2;
   //#########################
-  COMPRESS_CACHE_LEVEL = 1;
+  COMPRESS_CACHE_LEVEL = 0;
   LOG(INFO) << "data size "  << data_size << " GB, "
             << "cache size " << cache_size << " GB, "
             << "compress level " << COMPRESS_CACHE_LEVEL;
@@ -435,6 +435,9 @@ void GraphPS<T>::run() {
                _VertexOut.data(), _VertexIn.data(),
                std::ref(_UpdatedLastIter), step);
     }
+    while(_Pending_Request > 0) {
+      graphps_sleep(10);
+    }
     std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
     int local_comp_time = std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count();
     LOG(INFO) << "Iter: " << step << " Worker: " << _my_rank << " Use: " << local_comp_time;
@@ -455,6 +458,8 @@ void GraphPS<T>::run() {
       _VertexData[result_id] = _VertexDataNew[result_id];
 #endif
     }
+
+    stop_time_comp();
     updated_ratio = changed_num * 1.0 / _VertexNum;
     MPI_Bcast(&updated_ratio, 1, MPI_FLOAT, 0, MPI_COMM_WORLD);
     int missed_num = _Missed_Num;
@@ -477,7 +482,6 @@ void GraphPS<T>::run() {
     _Missed_Num = 0;
     _Network_Compressed = 0;
     _Network_Uncompressed = 0;
-    stop_time_comp();
     if (_my_rank==0)
       LOG(INFO) << "Iteration: " << step
                 << ", uses "<< COMP_TIME
