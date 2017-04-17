@@ -62,7 +62,7 @@ void graphps_send(const char * data, const int length, const int rank) {
 }
 
 template<class T>
-void graphps_sendall(std::vector<T> & data_vector, int32_t changed_num, const T* VertexData) {
+void graphps_sendall(std::vector<T> & data_vector, int32_t changed_num, const T* VertexMsg) {
   int  omp_id = omp_get_thread_num();
   assert (_Send_Buffer_Lock[omp_id] == 0);
   _Send_Buffer_Lock[omp_id]++;
@@ -74,7 +74,7 @@ void graphps_sendall(std::vector<T> & data_vector, int32_t changed_num, const T*
   int32_t changed_num_verify = 0;
   if (density < DENSITY_VALUE) {
     for (int32_t k=0; k<data_vector.size()-5; k++) {
-      if (data_vector[k] != VertexData[k]) {
+      if (data_vector[k] != VertexMsg[k]) {
         sparsedata_vector.push_back(k);
         sparsedata_vector.push_back(data_vector[k]);
         changed_num_verify++;
@@ -158,7 +158,7 @@ void graphps_sendall(std::vector<T> & data_vector, int32_t changed_num, const T*
 }
 
 template<class T>
-void graphps_server_backend(std::vector<T>& VertexDataNew, std::vector<T>& VertexData, int32_t id) {
+void graphps_server_backend(std::vector<T>& VertexMsgNew, std::vector<T>& VertexMsg, int32_t id) {
   void *responder = zmq_socket (_zmq_context, ZMQ_REP);
   assert(zmq_connect (responder, "inproc://graphps") == 0);
   char *buffer = new char[ZMQ_BUFFER];
@@ -198,19 +198,19 @@ void graphps_server_backend(std::vector<T>& VertexDataNew, std::vector<T>& Verte
       assert(end_id-start_id == raw_data_len-5);
 #ifdef USE_ASYNC
       for (int32_t k=0; k<(end_id-start_id); k++) {
-        VertexData[k+start_id] = raw_data[k];
+        VertexMsg[k+start_id] = raw_data[k];
       }
 #else
       for (int32_t k=0; k<(end_id-start_id); k++) {
-        VertexDataNew[k+start_id] = raw_data[k];
+        VertexMsgNew[k+start_id] = raw_data[k];
       }
 #endif
     } else {
       for (int32_t k=0; k<(raw_data_len-5); k=k+2) {
 #ifdef USE_ASYNC
-        VertexData[raw_data[k]+start_id] = raw_data[k+1];
+        VertexMsg[raw_data[k]+start_id] = raw_data[k+1];
 #else
-        VertexDataNew[raw_data[k]+start_id] = raw_data[k+1];
+        VertexMsgNew[raw_data[k]+start_id] = raw_data[k+1];
 #endif
       }
     }
@@ -219,7 +219,7 @@ void graphps_server_backend(std::vector<T>& VertexDataNew, std::vector<T>& Verte
 }
 
 template<class T>
-void graphps_server(std::vector<T>& VertexDataNew, std::vector<T>& VertexData) {
+void graphps_server(std::vector<T>& VertexMsgNew, std::vector<T>& VertexMsg) {
   std::string server_addr(ZMQ_PREFIX);
   server_addr += std::to_string(ZMQ_PORT);
   void *server_frontend = zmq_socket (_zmq_context, ZMQ_ROUTER);
@@ -230,7 +230,7 @@ void graphps_server(std::vector<T>& VertexDataNew, std::vector<T>& VertexData) {
   assert (zmq_bind (server_backend, "inproc://graphps") == 0);
   std::vector<std::thread> zmq_server_pool;
   for (int32_t i=0; i<ZMQNUM; i++)
-    zmq_server_pool.push_back(std::thread(graphps_server_backend<T>, std::ref(VertexDataNew), std::ref(VertexData), i));
+    zmq_server_pool.push_back(std::thread(graphps_server_backend<T>, std::ref(VertexMsgNew), std::ref(VertexMsg), i));
   // for (int32_t i=0; i<ZMQNUM; i++) 
   //   zmq_server_pool[i].detach();
   zmq_proxy (server_frontend, server_backend, NULL);

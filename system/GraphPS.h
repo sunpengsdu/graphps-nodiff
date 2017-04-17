@@ -15,8 +15,8 @@ template<class T>
 bool comp_pagerank(const int32_t P_ID,
                    std::string DataPath,
                    const int32_t VertexNum,
-                   T* VertexData,
-                   T* VertexDataNew,
+                   T* VertexMsg,
+                   T* VertexMsgNew,
                    const int32_t* _VertexOut,
                    const int32_t* _VertexIn,
                    std::vector<bool>& ActiveVector,
@@ -52,14 +52,14 @@ bool comp_pagerank(const int32_t P_ID,
     rel = 0;
     for (k = 0; k < indptr[i+1] - indptr[i]; k++) {
       tmp = indices[indptr[i] + k];
-      rel += VertexData[tmp]/_VertexOut[tmp];
+      rel += VertexMsg[tmp]/_VertexOut[tmp];
     }
     rel = rel*0.85 + 1.0/vertex_num;
     result[i] = rel;
 #ifdef USE_ASYNC
-    VertexData[start_id+i] = rel;
+    VertexMsg[start_id+i] = rel;
 #endif
-    if (rel != VertexData[start_id+i]) {
+    if (rel != VertexMsg[start_id+i]) {
       changed_num++;
     }
   }
@@ -71,17 +71,17 @@ bool comp_pagerank(const int32_t P_ID,
 
 #ifdef USE_ASYNC
 //  for (int32_t k=0; k<(end_id-start_id); k++) {
-//    VertexData[k+start_id] += result[k];
+//    VertexMsg[k+start_id] += result[k];
 //  }
 #else
   for (int32_t k=0; k<(end_id-start_id); k++) {
-    VertexDataNew[k+start_id] = result[k];
+    VertexMsgNew[k+start_id] = result[k];
   }
 #endif
 
   _Computing_Num--;
   if (changed_num > 0)
-    graphps_sendall<T>(std::ref(result), changed_num, VertexData+start_id);
+    graphps_sendall<T>(std::ref(result), changed_num, VertexMsg+start_id);
 
   // std::chrono::steady_clock::time_point t4 = std::chrono::steady_clock::now();
   // int commu_time = std::chrono::duration_cast<std::chrono::milliseconds>(t4-t3).count();
@@ -96,8 +96,8 @@ template<class T>
 bool comp_sssp(const int32_t P_ID,
                std::string DataPath,
                const int32_t VertexNum,
-               T* VertexData,
-               T* VertexDataNew,
+               T* VertexMsg,
+               T* VertexMsgNew,
                const int32_t* _VertexOut,
                const int32_t* _VertexIn,
                std::vector<bool>& ActiveVector,
@@ -127,17 +127,17 @@ bool comp_sssp(const int32_t P_ID,
   int32_t changed_num = 0;
   T tmp;
   for (i = 0; i < end_id-start_id; i++) {
-    min = VertexData[start_id+i];
+    min = VertexMsg[start_id+i];
     for (j = 0; j < indptr[i+1] - indptr[i]; j++) {
-      tmp = VertexData[indices[indptr[i] + j]] + 1;
+      tmp = VertexMsg[indices[indptr[i] + j]] + 1;
       if (ActiveVector[indices[indptr[i]+j]] && min > tmp)
         min = tmp;
     }
     result[i] = min;
 #ifdef USE_ASYNC
-    VertexData[start_id+i] = min;
+    VertexMsg[start_id+i] = min;
 #endif
-    if (min != VertexData[start_id+i]) {
+    if (min != VertexMsg[start_id+i]) {
       changed_num++;
     }
   }
@@ -146,18 +146,18 @@ bool comp_sssp(const int32_t P_ID,
 
 #ifdef USE_ASYNC
 //  for (int32_t k=0; k<(end_id-start_id); k++) {
-//    VertexData[k+start_id] += result[k];
+//    VertexMsg[k+start_id] += result[k];
 //  }
 #else
   for (int32_t k=0; k<(end_id-start_id); k++) {
-    VertexDataNew[k+start_id] = result[k];
+    VertexMsgNew[k+start_id] = result[k];
   }
 #endif
 
   _Computing_Num--;
   if (changed_num > 0) {
     // graphps_sendall<T>(std::ref(result), changed_num);
-    graphps_sendall<T>(std::ref(result), changed_num, VertexData+start_id);
+    graphps_sendall<T>(std::ref(result), changed_num, VertexMsg+start_id);
   }
   return true;
 }
@@ -167,8 +167,8 @@ template<class T>
 bool comp_cc(const int32_t P_ID,
              std::string DataPath,
              const int32_t VertexNum,
-             T* VertexData,
-             T* VertexDataNew,
+             T* VertexMsg,
+             T* VertexMsgNew,
              const int32_t* _VertexOut,
              const int32_t* _VertexIn,
              std::vector<bool>& ActiveVector,
@@ -197,16 +197,16 @@ bool comp_cc(const int32_t P_ID,
   T   max = 0;
   int32_t changed_num = 0;
   for (i = 0; i < end_id-start_id; i++) {
-    max = VertexData[start_id+i];
+    max = VertexMsg[start_id+i];
     for (j = 0; j < indptr[i+1] - indptr[i]; j++) {
-      if (max < VertexData[indices[indptr[i]+j]])
-        max = VertexData[indices[indptr[i] + j]];
+      if (max < VertexMsg[indices[indptr[i]+j]])
+        max = VertexMsg[indices[indptr[i] + j]];
     }
     result[i] = max;
 #ifdef USE_ASYNC
-    VertexData[start_id+i] = max;
+    VertexMsg[start_id+i] = max;
 #endif
-    if (max != VertexData[start_id+i]) {
+    if (max != VertexMsg[start_id+i]) {
       changed_num++;
     }
   }
@@ -215,18 +215,18 @@ bool comp_cc(const int32_t P_ID,
 
 #ifdef USE_ASYNC
 //  for (int32_t k=0; k<(end_id-start_id); k++) {
-//    VertexData[k+start_id] += result[k];
+//    VertexMsg[k+start_id] += result[k];
 //  }
 #else
   for (int32_t k=0; k<(end_id-start_id); k++) {
-    VertexDataNew[k+start_id] = result[k];
+    VertexMsgNew[k+start_id] = result[k];
   }
 #endif
 
   _Computing_Num--;
   if (changed_num > 0)
     // graphps_sendall<T>(std::ref(result), changed_num);
-    graphps_sendall<T>(std::ref(result), changed_num, VertexData+start_id);
+    graphps_sendall<T>(std::ref(result), changed_num, VertexMsg+start_id);
   return true;
 }
 
@@ -254,10 +254,11 @@ public:
   int32_t _PartitionID_End;
   std::vector<int32_t> _Allocated_Partition;
   std::map<int, std::string> _AllHosts;
+  std::unordered_map<int32_t, T> _VertexValue;
   std::vector<int32_t> _VertexOut;
   std::vector<int32_t> _VertexIn;
-  std::vector<T> _VertexData;
-  std::vector<T> _VertexDataNew;
+  std::vector<T> _VertexMsg;
+  std::vector<T> _VertexMsgNew;
   std::vector<bool> _UpdatedLastIter;
   bloom_parameters _bf_parameters;
   std::map<int32_t, bloom_filter> _bf_pool;
@@ -302,7 +303,7 @@ void GraphPS<T>::init(std::string DataPath,
   }
   _Scheduler = _AllHosts[0];
   _UpdatedLastIter.assign(_VertexNum, true);
-  _VertexDataNew.assign(_VertexNum, 0);
+  _VertexMsgNew.assign(_VertexNum, 0);
   int32_t n = std::ceil(_PartitionNum*1.0/_num_workers);
   _PartitionID_Start = (_my_rank*n < _PartitionNum) ? _my_rank*n:-1;
   _PartitionID_End = ((1+_my_rank)*n > _PartitionNum) ? _PartitionNum:(1+_my_rank)*n;
@@ -404,13 +405,13 @@ void GraphPS<T>::run() {
   ////////////////
 
   init_vertex();
-  std::thread graphps_server_mt(graphps_server<T>, std::ref(_VertexDataNew), std::ref(_VertexData));
+  std::thread graphps_server_mt(graphps_server<T>, std::ref(_VertexMsgNew), std::ref(_VertexMsg));
   std::vector<int32_t> ActiveVector_V;
   std::vector<int32_t> Partitions(_Allocated_Partition.size(), 0);
   float updated_ratio = 1.0;
   int32_t step = 0;
 
-  _VertexDataNew.assign(_VertexData.begin(), _VertexData.end());
+  _VertexMsgNew.assign(_VertexMsg.begin(), _VertexMsg.end());
   barrier_workers();
   stop_time_init();
   if (_my_rank==0)
@@ -431,7 +432,7 @@ void GraphPS<T>::run() {
     for (int32_t k=0; k<Partitions.size(); k++) {
       int32_t P_ID = Partitions[k];
       (*_comp)(P_ID,  _DataPath, _VertexNum,
-               _VertexData.data(), _VertexDataNew.data(),
+               _VertexMsg.data(), _VertexMsgNew.data(),
                _VertexOut.data(), _VertexIn.data(),
                std::ref(_UpdatedLastIter), step);
     }
@@ -446,16 +447,16 @@ void GraphPS<T>::run() {
     int changed_num = 0;
     #pragma omp parallel for num_threads(_ThreadNum) reduction (+:changed_num)  schedule(static)
     for (int32_t result_id = 0; result_id < _VertexNum; result_id++) {
-      if (_VertexDataNew[result_id] == _VertexData[result_id]) {
+      if (_VertexMsgNew[result_id] == _VertexMsg[result_id]) {
         _UpdatedLastIter[result_id] = false;
       } else {
         _UpdatedLastIter[result_id] = true;
         changed_num += 1;
       }
 #ifdef USE_ASYNC
-      _VertexDataNew[result_id] = _VertexData[result_id];
+      _VertexMsgNew[result_id] = _VertexMsg[result_id];
 #else
-      _VertexData[result_id] = _VertexDataNew[result_id];
+      _VertexMsg[result_id] = _VertexMsgNew[result_id];
 #endif
     }
 

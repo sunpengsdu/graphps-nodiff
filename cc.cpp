@@ -19,15 +19,9 @@ public:
     this->_comp = comp_cc<T>;
   }
   void init_vertex() {
-    this->load_vertex_out();
-    #pragma omp parallel for num_threads(this->_ThreadNum) schedule(static)
-    for (int32_t i=0; i<this->_VertexNum; i++) {
-      if (this->_VertexOut[i] == 0)
-        this->_VertexOut[i] = 1;
-    }
-    this->_VertexData.assign(this->_VertexNum, 0);
+    this->_VertexMsg.assign(this->_VertexNum, 0);
     for (int32_t i = 0; i < this->_VertexNum; i++) {
-      this->_VertexData[i] = i;
+      this->_VertexMsg[i] = i;
     }
   }
 };

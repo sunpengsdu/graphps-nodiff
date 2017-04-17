@@ -25,7 +25,7 @@ public:
       if (this->_VertexOut[i] == 0)
         this->_VertexOut[i] = 1;
     }
-    this->_VertexData.assign(this->_VertexNum, 1.0/this->_VertexNum);
+    this->_VertexMsg.assign(this->_VertexNum, 1.0/this->_VertexNum);
   }
 };
 

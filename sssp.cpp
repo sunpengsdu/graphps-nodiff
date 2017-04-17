@@ -19,14 +19,8 @@ public:
     this->_comp = comp_sssp<T>;
   }
   void init_vertex() {
-    this->load_vertex_out();
-    #pragma omp parallel for num_threads(this->_ThreadNum) schedule(static)
-    for (int32_t i=0; i<this->_VertexNum; i++) {
-      if (this->_VertexOut[i] == 0)
-        this->_VertexOut[i] = 1;
-    }
-    this->_VertexData.assign(this->_VertexNum, GPS_INF);
-    this->_VertexData[1] = 0;
+    this->_VertexMsg.assign(this->_VertexNum, GPS_INF);
+    this->_VertexMsg[1] = 0;
   }
 };
 
