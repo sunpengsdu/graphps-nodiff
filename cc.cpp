@@ -19,6 +19,7 @@ public:
     this->_comp = comp_cc<T>;
   }
   void init_vertex() {
+    this->_VertexValue.assign(this->_VertexNum, 0);
     this->_VertexMsg.assign(this->_VertexNum, 0);
     for (int32_t i = 0; i < this->_VertexNum; i++) {
       this->_VertexMsg[i] = i;

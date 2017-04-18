@@ -12,98 +12,14 @@
 #include "Communication.h"
 
 template<class T>
-bool comp_pagerank(const int32_t P_ID,
-                   std::string DataPath,
-                   const int32_t VertexNum,
-                   T* VertexValue,
-                   T* VertexMsg,
-                   T* VertexMsgNew,
-                   const int32_t* _VertexOut,
-                   const int32_t* _VertexIn,
-                   std::vector<bool>& ActiveVector,
-                   const int32_t step) {
-  // std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
-  _Computing_Num++;
-  DataPath += std::to_string(P_ID);
-  DataPath += ".edge.npy";
-  char* EdgeDataNpy = load_edge(P_ID, DataPath);
-  int32_t *EdgeData = reinterpret_cast<int32_t*>(EdgeDataNpy);
-  int32_t start_id = EdgeData[3];
-  int32_t end_id = EdgeData[4];
-  int32_t indices_len = EdgeData[1];
-  int32_t indptr_len = EdgeData[2];
-  int32_t * indices = EdgeData + 5;
-  int32_t * indptr = EdgeData + 5 + indices_len;
-  int32_t vertex_num = VertexNum;
-  std::vector<T> result(end_id-start_id+5, 0);
-  result[end_id-start_id+4] = 0; //sparsity ratio
-  result[end_id-start_id+3] = (int32_t)std::floor(start_id*1.0/10000);
-  result[end_id-start_id+2] = (int32_t)start_id%10000;
-  result[end_id-start_id+1] = (int32_t)std::floor(end_id*1.0/10000);
-  result[end_id-start_id+0] = (int32_t)end_id%10000;
-  int32_t i   = 0;
-  int32_t k   = 0;
-  int32_t tmp = 0;
-  T   rel = 0;
-  int changed_num = 0;
-  // std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
-  // int load_time = std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count();
-
-  for (i=0; i < end_id-start_id; i++) {
-    rel = 0;
-    for (k = 0; k < indptr[i+1] - indptr[i]; k++) {
-      tmp = indices[indptr[i] + k];
-      rel += VertexMsg[tmp]/_VertexOut[tmp];
-    }
-    rel = rel*0.85 + 1.0/vertex_num;
-    result[i] = rel;
-#ifdef USE_ASYNC
-    VertexMsg[start_id+i] = rel;
-#endif
-    if (rel != VertexMsg[start_id+i]) {
-      changed_num++;
-    }
-    if (rel != VertexValue[start_id+i]) {
-      _Changed_Vertex++;
-      VertexValue[start_id+i] = rel;
-    }
-  }
-  clean_edge(P_ID, EdgeDataNpy);
-  result[end_id-start_id+4] = (int32_t)changed_num*100.0/(end_id-start_id); //sparsity ratio
-
-  // std::chrono::steady_clock::time_point t3 = std::chrono::steady_clock::now();
-  // int comp_time = std::chrono::duration_cast<std::chrono::milliseconds>(t3-t2).count();
-
-#ifdef USE_ASYNC
-//  for (int32_t k=0; k<(end_id-start_id); k++) {
-//    VertexMsg[k+start_id] += result[k];
-//  }
-#else
-  for (int32_t k=0; k<(end_id-start_id); k++) {
-    VertexMsgNew[k+start_id] = result[k];
-  }
-#endif
-
-  _Computing_Num--;
-  if (changed_num > 0)
-    graphps_sendall<T>(std::ref(result), changed_num, VertexMsg+start_id);
-
-  // std::chrono::steady_clock::time_point t4 = std::chrono::steady_clock::now();
-  // int commu_time = std::chrono::duration_cast<std::chrono::milliseconds>(t4-t3).count();
- // LOG(INFO) << std::string(_all_hostname + _my_rank*HOST_LEN)  
- //           << " Rank: " << _my_rank  << " Iter: " << step << " Load: " << load_time
- //           << " Comp: " << comp_time << " Commu: " << commu_time;
- 
-  return true;
-}
-
-template<class T>
-bool comp_sssp(const int32_t P_ID,
+bool comp_tc(const int32_t P_ID,
                std::string DataPath,
                const int32_t VertexNum,
-               T* VertexValue,
-               T* VertexMsg,
-               T* VertexMsgNew,
+               std::vector<T>& VertexValue,
+               std::vector<T*>& VertexMsg,
+               std::vector<int32_t>& VertexMsgLen,
+               std::vector<T*>& VertexMsgNew,
+               std::vector<int32_t>& VertexMsgNewLen,
                const int32_t* _VertexOut,
                const int32_t* _VertexIn,
                std::vector<bool>& ActiveVector,
@@ -120,128 +36,67 @@ bool comp_sssp(const int32_t P_ID,
   int32_t * indices = EdgeData + 5;
   int32_t * indptr = EdgeData + 5 + indices_len;
   int32_t vertex_num = VertexNum;
-  std::vector<T> result(end_id-start_id+5, 0);
-  result[end_id-start_id+4] = 0;
-  result[end_id-start_id+3] = (int32_t)std::floor(start_id*1.0/10000);
-  result[end_id-start_id+2] = (int32_t)start_id%10000;
-  result[end_id-start_id+1] = (int32_t)std::floor(end_id*1.0/10000);
-  result[end_id-start_id+0] = (int32_t)end_id%10000;
-  // LOG(INFO) << end_id << " " << start_id;
+  std::vector<std::vector<T>> result;
+  for (int32_t i=0; i<end_id-start_id; i++) {
+    result.push_back(std::vector<T>());
+  }
   int32_t i   = 0;
   int32_t j   = 0;
-  T   min = 0;
-  int32_t changed_num = 0;
+  int32_t f   = 0;
+  int32_t n1   = 0;
+  int32_t k = 0;
+  int32_t c = 500000;
   T tmp;
+  int32_t skip = step*c;
   for (i = 0; i < end_id-start_id; i++) {
-    min = VertexMsg[start_id+i];
+    f = 0;
     for (j = 0; j < indptr[i+1] - indptr[i]; j++) {
-      tmp = VertexMsg[indices[indptr[i] + j]] + 1;
-      if (ActiveVector[indices[indptr[i]+j]] && min > tmp)
-        min = tmp;
+      int32_t id = indices[indptr[i]] + j;
+      for (k=0; k <  VertexMsgLen[id]; k++) {
+        tmp = VertexMsg[id][k];
+        if (tmp == i+start_id) {
+          VertexValue[i+start_id]++;
+          f = 1;
+        }
+      }
+      n1++;
+      if (n1 > skip && n1 <= skip+c) {
+        result[i].push_back(indices[indptr[i]+j]);
+      }
     }
-    result[i] = min;
-#ifdef USE_ASYNC
-    VertexMsg[start_id+i] = min;
-#endif
-    if (min != VertexMsg[start_id+i]) {
-      changed_num++;
-    }
-    if (min != VertexValue[start_id+i]) {
+    if (f == 1) {
       _Changed_Vertex++;
-      VertexValue[start_id+i] = min;
     }
+    result[i].shrink_to_fit();
   }
   clean_edge(P_ID, EdgeDataNpy);
-  result[end_id-start_id+4] = (int32_t)changed_num*100.0/(end_id-start_id); //sparsity ratio
-
-#ifdef USE_ASYNC
-//  for (int32_t k=0; k<(end_id-start_id); k++) {
-//    VertexMsg[k+start_id] += result[k];
-//  }
-#else
   for (int32_t k=0; k<(end_id-start_id); k++) {
-    VertexMsgNew[k+start_id] = result[k];
+    VertexMsgNew[k+start_id] = new T [result[k].size()];
+    memcpy(VertexMsgNew[k+start_id], &result[k][0], sizeof(T)*result[k].size());
+    VertexMsgNewLen[k+start_id] = result[k].size();
   }
-#endif
-
-  _Computing_Num--;
-  if (changed_num > 0) {
-    // graphps_sendall<T>(std::ref(result), changed_num);
-    graphps_sendall<T>(std::ref(result), changed_num, VertexMsg+start_id);
-  }
-  return true;
-}
-
-
-template<class T>
-bool comp_cc(const int32_t P_ID,
-             std::string DataPath,
-             const int32_t VertexNum,
-             T* VertexValue,
-             T* VertexMsg,
-             T* VertexMsgNew,
-             const int32_t* _VertexOut,
-             const int32_t* _VertexIn,
-             std::vector<bool>& ActiveVector,
-             const int32_t step) {
-  _Computing_Num++;
-  DataPath += std::to_string(P_ID);
-  DataPath += ".edge.npy";
-  // LOG(INFO) << "Processing " << DataPath;
-  char* EdgeDataNpy = load_edge(P_ID, DataPath);
-  int32_t *EdgeData = reinterpret_cast<int32_t*>(EdgeDataNpy);
-  int32_t start_id = EdgeData[3];
-  int32_t end_id = EdgeData[4];
-  int32_t indices_len = EdgeData[1];
-  int32_t indptr_len = EdgeData[2];
-  int32_t * indices = EdgeData + 5;
-  int32_t * indptr = EdgeData + 5 + indices_len;
-  int32_t vertex_num = VertexNum;
-  std::vector<T> result(end_id-start_id+5, 0);
-  result[end_id-start_id+4] = 0;
-  result[end_id-start_id+3] = (int32_t)std::floor(start_id*1.0/10000);
-  result[end_id-start_id+2] = (int32_t)start_id%10000;
-  result[end_id-start_id+1] = (int32_t)std::floor(end_id*1.0/10000);
-  result[end_id-start_id+0] = (int32_t)end_id%10000;
-  int32_t i   = 0;
-  int32_t j   = 0;
-  T   max = 0;
-  int32_t changed_num = 0;
-  for (i = 0; i < end_id-start_id; i++) {
-    max = VertexMsg[start_id+i];
-    for (j = 0; j < indptr[i+1] - indptr[i]; j++) {
-      if (max < VertexMsg[indices[indptr[i]+j]])
-        max = VertexMsg[indices[indptr[i] + j]];
-    }
-    result[i] = max;
-#ifdef USE_ASYNC
-    VertexMsg[start_id+i] = max;
-#endif
-    if (max != VertexMsg[start_id+i]) {
-      changed_num++;
-    }
-    if (max != VertexValue[start_id+i]) {
-      _Changed_Vertex++;
-      VertexValue[start_id+i] = max;
-    }
-  }
-  clean_edge(P_ID, EdgeDataNpy);
-  result[end_id-start_id+4] = (int32_t)changed_num*100.0/(end_id-start_id); //sparsity ratio
-
-#ifdef USE_ASYNC
-//  for (int32_t k=0; k<(end_id-start_id); k++) {
-//    VertexMsg[k+start_id] += result[k];
-//  }
-#else
+  std::vector<T> result_v;
+  int32_t message_v_size = 0;
   for (int32_t k=0; k<(end_id-start_id); k++) {
-    VertexMsgNew[k+start_id] = result[k];
+    if (result[k].size() > 0) {
+      message_v_size++;
+      result_v.push_back(k);
+      result_v.push_back(result[k].size());
+      for (auto & tmp : result[k]) 
+        result_v.push_back(tmp);
+    }
+    result[k].clear();
+    result[k].shrink_to_fit();
   }
-#endif
-
+  result_v.push_back((int32_t)end_id%10000);
+  result_v.push_back((int32_t)std::floor(end_id*1.0/10000));
+  result_v.push_back((int32_t)start_id%10000);
+  result_v.push_back((int32_t)std::floor(start_id*1.0/10000));
   _Computing_Num--;
-  if (changed_num > 0)
-    // graphps_sendall<T>(std::ref(result), changed_num);
-    graphps_sendall<T>(std::ref(result), changed_num, VertexMsg+start_id);
+  if (message_v_size > 0)
+    graphps_sendall<T>(std::ref(result_v), start_id, end_id);
+  result_v.clear();
+  result_v.shrink_to_fit();
   return true;
 }
 
@@ -251,9 +106,11 @@ public:
   bool (*_comp)(const int32_t,
                 std::string,
                 const int32_t,
-                T*,
-                T*,
-                T*,
+                std::vector<T> &,
+                std::vector<T*> &,
+                std::vector<int32_t> &,
+                std::vector<T*> &,
+                std::vector<int32_t> &,
                 const int32_t*,
                 const int32_t*,
                 std::vector<bool>&,
@@ -273,8 +130,10 @@ public:
   std::vector<T> _VertexValue;
   std::vector<int32_t> _VertexOut;
   std::vector<int32_t> _VertexIn;
-  std::vector<T> _VertexMsg;
-  std::vector<T> _VertexMsgNew;
+  std::vector<T*> _VertexMsg;
+  std::vector<int32_t> _VertexMsgLen;
+  std::vector<T*> _VertexMsgNew;
+  std::vector<int32_t> _VertexMsgNewLen;
   std::vector<bool> _UpdatedLastIter;
   bloom_parameters _bf_parameters;
   std::map<int32_t, bloom_filter> _bf_pool;
@@ -284,7 +143,6 @@ public:
             const int32_t PartitionNum,
             const int32_t MaxIteration=10);
 
-//    virtual void compute(const int32_t PartitionID)=0;
   virtual void init_vertex()=0;
   void set_threadnum (const int32_t ThreadNum);
   void run();
@@ -319,7 +177,6 @@ void GraphPS<T>::init(std::string DataPath,
   }
   _Scheduler = _AllHosts[0];
   _UpdatedLastIter.assign(_VertexNum, true);
-  _VertexMsgNew.assign(_VertexNum, 0);
   int32_t n = std::ceil(_PartitionNum*1.0/_num_workers);
   _PartitionID_Start = (_my_rank*n < _PartitionNum) ? _my_rank*n:-1;
   _PartitionID_End = ((1+_my_rank)*n > _PartitionNum) ? _PartitionNum:(1+_my_rank)*n;
@@ -329,6 +186,7 @@ void GraphPS<T>::init(std::string DataPath,
   for (int i = p_s[_my_rank]; i <= p_e[_my_rank]; i++) {
     _Allocated_Partition.push_back(i);
   }*/
+
   for (int i = _PartitionID_Start; i < _PartitionID_End; i++) {
     _Allocated_Partition.push_back(i);
   }
@@ -356,7 +214,7 @@ void GraphPS<T>::init(std::string DataPath,
   else
     COMPRESS_CACHE_LEVEL = 2;
   //#########################
-  COMPRESS_CACHE_LEVEL = 0;
+  COMPRESS_CACHE_LEVEL = 2;
   LOG(INFO) << "data size "  << data_size << " GB, "
             << "cache size " << cache_size << " GB, "
             << "compress level " << COMPRESS_CACHE_LEVEL;
@@ -421,13 +279,12 @@ void GraphPS<T>::run() {
   ////////////////
 
   init_vertex();
-  std::thread graphps_server_mt(graphps_server<T>, std::ref(_VertexMsgNew), std::ref(_VertexMsg));
+  std::thread graphps_server_mt(graphps_server<T>, std::ref(_VertexMsgNew), std::ref(_VertexMsgNewLen));
   std::vector<int32_t> ActiveVector_V;
   std::vector<int32_t> Partitions(_Allocated_Partition.size(), 0);
   float updated_ratio = 1.0;
   int32_t step = 0;
 
-  _VertexMsgNew.assign(_VertexMsg.begin(), _VertexMsg.end());
   barrier_workers();
   stop_time_init();
   if (_my_rank==0)
@@ -448,7 +305,9 @@ void GraphPS<T>::run() {
     for (int32_t k=0; k<Partitions.size(); k++) {
       int32_t P_ID = Partitions[k];
       (*_comp)(P_ID,  _DataPath, _VertexNum,
-               _VertexValue.data(), _VertexMsg.data(), _VertexMsgNew.data(),
+               std::ref(_VertexValue), 
+               std::ref(_VertexMsg), std::ref(_VertexMsgLen),
+               std::ref(_VertexMsgNew), std::ref(_VertexMsgNewLen),
                _VertexOut.data(), _VertexIn.data(),
                std::ref(_UpdatedLastIter), step);
     }
@@ -460,25 +319,35 @@ void GraphPS<T>::run() {
     LOG(INFO) << "Iter: " << step << " Worker: " << _my_rank << " Use: " << local_comp_time;
 
     barrier_workers();
+    //#########
     int changed_num = _Changed_Vertex;
+    int total_changed_num = _Changed_Vertex;
+    MPI_Allreduce(&changed_num, &total_changed_num, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
     _Changed_Vertex = 0;
-    int changed_num_total = 0;
+
     #pragma omp parallel for num_threads(_ThreadNum)  schedule(static)
     for (int32_t result_id = 0; result_id < _VertexNum; result_id++) {
-      if (_VertexMsgNew[result_id] == _VertexMsg[result_id]) {
-        _UpdatedLastIter[result_id] = false;
-      } else {
-        _UpdatedLastIter[result_id] = true;
+      _UpdatedLastIter[result_id] = true;
+      int32_t dst_cap = _VertexMsgLen[result_id];
+      int32_t src_len = _VertexMsgNewLen[result_id];
+      if (_VertexMsgLen[result_id] > 0) {
+        delete [] _VertexMsg[result_id];
+        _VertexMsgLen[result_id] = 0;
+        _VertexMsg[result_id] = NULL;
       }
-#ifdef USE_ASYNC
-      _VertexMsgNew[result_id] = _VertexMsg[result_id];
-#else
-      _VertexMsg[result_id] = _VertexMsgNew[result_id];
-#endif
+      if (src_len > 0) {
+        _VertexMsg[result_id] = new T [src_len];
+        memcpy(_VertexMsg[result_id], _VertexMsgNew[result_id], sizeof(T)*src_len);
+        _VertexMsgLen[result_id] = src_len;
+        _VertexMsgNewLen[result_id] = 0;
+        delete [] _VertexMsgNew[result_id];
+        _VertexMsgNew[result_id] = NULL;
+      }
     }
+
     stop_time_comp();
-    MPI_Allreduce(&changed_num, &changed_num_total, 1, MPI_INT, MPI_SUM,  MPI_COMM_WORLD);
-    updated_ratio = changed_num_total * 1.0 / _VertexNum;
+    updated_ratio = total_changed_num * 1.0 / _VertexNum;
+    MPI_Bcast(&updated_ratio, 1, MPI_FLOAT, 0, MPI_COMM_WORLD);
     int missed_num = _Missed_Num;
     int total_missed_num = _Missed_Num;
     int cache_size = _EdgeCache_Size;
@@ -499,19 +368,21 @@ void GraphPS<T>::run() {
     _Missed_Num = 0;
     _Network_Compressed = 0;
     _Network_Uncompressed = 0;
+
     if (_my_rank==0)
       LOG(INFO) << "Iteration: " << step
                 << ", uses "<< COMP_TIME
-                << " ms, Update " << changed_num_total
+                << " ms, Update " << total_changed_num
                 << ", Ratio " << updated_ratio
                 << ", Miss " << total_missed_num
                 << ", Cache(MB) " << total_cache_size
                 << ", Before(MB) " << total_cache_size_uncompress
                 << ", Compress Net(MB) " << total_network_compress*1.0/1024/1024
                 << ", Uncompress Net(MB) " << total_network_uncompress*1.0/1024/1024;
-    if (changed_num_total == 0 && step > 1) {
+    if (total_changed_num == 0 && step > 1) {
       break;
     }
+    barrier_workers();
   }
 }
 

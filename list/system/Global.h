@@ -28,6 +28,7 @@
 #include <future>
 #include <exception>
 #include <atomic>
+#include <deque>
 #include <algorithm>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -38,12 +39,11 @@
 #define HOST_LEN 20
 #define ZMQ_PREFIX "tcp://*:"
 #define ZMQ_PORT 15555
-#define ZMQ_BUFFER 50*1024*1024
+#define ZMQ_BUFFER 200*1024*1024
 #define GPS_INF 10000
-#define EDGE_CACHE_SIZE 80*1024 //MB
+#define EDGE_CACHE_SIZE 50*1024 //MB
 #define DENSITY_VALUE 20
 //#define USE_HDFS
-// #define USE_ASYNC
 #define ZMQNUM 23
 #define CMPNUM 23
 
@@ -77,10 +77,10 @@ std::atomic<int32_t> _EdgeCache_Size;
 std::atomic<int32_t> _EdgeCache_Size_Uncompress;
 std::atomic<int32_t> _Computing_Num;
 std::atomic<int32_t> _Missed_Num;
+std::atomic<int32_t> _Changed_Vertex;
 std::atomic<long> _Network_Compressed;
 std::atomic<long> _Network_Uncompressed;
 std::atomic<int32_t> _Pending_Request;
-std::atomic<int32_t> _Changed_Vertex;
 std::unordered_map<int, char*> _Send_Buffer;
 std::unordered_map<int, size_t> _Send_Buffer_Len;
 std::unordered_map<int, std::atomic<int>> _Send_Buffer_Lock;
