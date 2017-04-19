@@ -89,7 +89,8 @@ void graphps_sendall(std::vector<T> & data_vector, int32_t start_id, int32_t end
   } else if (COMPRESS_NETWORK_LEVEL == 1) {
     size_t max_compressed_length = snappy::MaxCompressedLength(length);
     size_t compressed_length = 0;
-    if (_Send_Buffer_Len[omp_id] < max_compressed_length) {
+    if (_Send_Buffer_Len[omp_id] < max_compressed_length || 
+        _Send_Buffer_Len[omp_id] > 2*max_compressed_length) {
       if (_Send_Buffer_Len[omp_id] > 0) {delete [] (_Send_Buffer[omp_id]);}
       _Send_Buffer[omp_id] = new char[int(max_compressed_length*1.5)];
       _Send_Buffer_Len[omp_id] = int(max_compressed_length*1.5);
@@ -107,7 +108,8 @@ void graphps_sendall(std::vector<T> & data_vector, int32_t start_id, int32_t end
     size_t buf_size = compressBound(length);
     int compress_result = 0;
     size_t compressed_length = 0;
-    if (_Send_Buffer_Len[omp_id] < buf_size) {
+    if (_Send_Buffer_Len[omp_id] < buf_size || 
+        _Send_Buffer_Len[omp_id] > 2*buf_size) {
       if (_Send_Buffer_Len[omp_id] > 0) {delete [] (_Send_Buffer[omp_id]);}
       _Send_Buffer[omp_id] = new char[int(buf_size*1.5)];
       _Send_Buffer_Len[omp_id] = int(buf_size*1.5);
@@ -149,7 +151,7 @@ void graphps_server_backend(std::vector<T*>& VertexMsgNew,
     if (length == -1) {break;}
     _Pending_Request++;
     assert(length < ZMQ_BUFFER);
-    zmq_send (responder, "ACK", 3, 0);
+    // zmq_send (responder, "ACK", 3, 0);
     if (COMPRESS_NETWORK_LEVEL == 0) {
       memcpy(uncompressed_c, buffer, length);
       uncompressed_length = length;
@@ -176,12 +178,14 @@ void graphps_server_backend(std::vector<T*>& VertexMsgNew,
     while (true) {
      int32_t s_id  = raw_data[k++];
      int32_t s_len = raw_data[k++];
+     assert (VertexMsgNew[start_id+s_id] == NULL);
      VertexMsgNew[start_id+s_id] = new T [s_len];
      memcpy(VertexMsgNew[start_id+s_id], raw_data+k, sizeof(T)*s_len);
      VertexMsgNewLen[start_id+s_id] = s_len;
      k = k + s_len;
      if (k>=raw_data_len-4) break;
     }
+     zmq_send (responder, "ACK", 3, 0);
     _Pending_Request--;
   }
 }

@@ -22,7 +22,6 @@ bool comp_tc(const int32_t P_ID,
                std::vector<int32_t>& VertexMsgNewLen,
                const int32_t* _VertexOut,
                const int32_t* _VertexIn,
-               std::vector<bool>& ActiveVector,
                const int32_t step) {
   _Computing_Num++;
   DataPath += std::to_string(P_ID);
@@ -43,15 +42,15 @@ bool comp_tc(const int32_t P_ID,
   int32_t i   = 0;
   int32_t j   = 0;
   int32_t f   = 0;
-  int32_t n1   = 0;
-  int32_t k = 0;
-  int32_t c = 500000;
+  size_t n1   = 0;
+  size_t k = 0;
+  size_t c = 600000;
   T tmp;
-  int32_t skip = step*c;
+  size_t skip = step*c;
   for (i = 0; i < end_id-start_id; i++) {
     f = 0;
     for (j = 0; j < indptr[i+1] - indptr[i]; j++) {
-      int32_t id = indices[indptr[i]] + j;
+      int32_t id = indices[indptr[i] + j];
       for (k=0; k <  VertexMsgLen[id]; k++) {
         tmp = VertexMsg[id][k];
         if (tmp == i+start_id) {
@@ -61,7 +60,7 @@ bool comp_tc(const int32_t P_ID,
       }
       n1++;
       if (n1 > skip && n1 <= skip+c) {
-        result[i].push_back(indices[indptr[i]+j]);
+        result[i].push_back(id);
       }
     }
     if (f == 1) {
@@ -71,6 +70,7 @@ bool comp_tc(const int32_t P_ID,
   }
   clean_edge(P_ID, EdgeDataNpy);
   for (int32_t k=0; k<(end_id-start_id); k++) {
+    assert (VertexMsgNew[k+start_id] == NULL);
     VertexMsgNew[k+start_id] = new T [result[k].size()];
     memcpy(VertexMsgNew[k+start_id], &result[k][0], sizeof(T)*result[k].size());
     VertexMsgNewLen[k+start_id] = result[k].size();
@@ -88,6 +88,8 @@ bool comp_tc(const int32_t P_ID,
     result[k].clear();
     result[k].shrink_to_fit();
   }
+  result.clear();
+  result.shrink_to_fit();
   result_v.push_back((int32_t)end_id%10000);
   result_v.push_back((int32_t)std::floor(end_id*1.0/10000));
   result_v.push_back((int32_t)start_id%10000);
@@ -95,8 +97,6 @@ bool comp_tc(const int32_t P_ID,
   _Computing_Num--;
   if (message_v_size > 0)
     graphps_sendall<T>(std::ref(result_v), start_id, end_id);
-  result_v.clear();
-  result_v.shrink_to_fit();
   return true;
 }
 
@@ -113,7 +113,6 @@ public:
                 std::vector<int32_t> &,
                 const int32_t*,
                 const int32_t*,
-                std::vector<bool>&,
                 const int32_t
                ) = NULL;
   T _FilterThreshold;
@@ -134,7 +133,6 @@ public:
   std::vector<int32_t> _VertexMsgLen;
   std::vector<T*> _VertexMsgNew;
   std::vector<int32_t> _VertexMsgNewLen;
-  std::vector<bool> _UpdatedLastIter;
   bloom_parameters _bf_parameters;
   std::map<int32_t, bloom_filter> _bf_pool;
   GraphPS();
@@ -176,7 +174,6 @@ void GraphPS<T>::init(std::string DataPath,
     _AllHosts[i] = host_name;
   }
   _Scheduler = _AllHosts[0];
-  _UpdatedLastIter.assign(_VertexNum, true);
   int32_t n = std::ceil(_PartitionNum*1.0/_num_workers);
   _PartitionID_Start = (_my_rank*n < _PartitionNum) ? _my_rank*n:-1;
   _PartitionID_End = ((1+_my_rank)*n > _PartitionNum) ? _PartitionNum:(1+_my_rank)*n;
@@ -280,7 +277,6 @@ void GraphPS<T>::run() {
 
   init_vertex();
   std::thread graphps_server_mt(graphps_server<T>, std::ref(_VertexMsgNew), std::ref(_VertexMsgNewLen));
-  std::vector<int32_t> ActiveVector_V;
   std::vector<int32_t> Partitions(_Allocated_Partition.size(), 0);
   float updated_ratio = 1.0;
   int32_t step = 0;
@@ -309,7 +305,7 @@ void GraphPS<T>::run() {
                std::ref(_VertexMsg), std::ref(_VertexMsgLen),
                std::ref(_VertexMsgNew), std::ref(_VertexMsgNewLen),
                _VertexOut.data(), _VertexIn.data(),
-               std::ref(_UpdatedLastIter), step);
+               step);
     }
     while(_Pending_Request > 0) {
       graphps_sleep(10);
@@ -317,9 +313,7 @@ void GraphPS<T>::run() {
     std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
     int local_comp_time = std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count();
     LOG(INFO) << "Iter: " << step << " Worker: " << _my_rank << " Use: " << local_comp_time;
-
     barrier_workers();
-    //#########
     int changed_num = _Changed_Vertex;
     int total_changed_num = _Changed_Vertex;
     MPI_Allreduce(&changed_num, &total_changed_num, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
@@ -327,22 +321,14 @@ void GraphPS<T>::run() {
 
     #pragma omp parallel for num_threads(_ThreadNum)  schedule(static)
     for (int32_t result_id = 0; result_id < _VertexNum; result_id++) {
-      _UpdatedLastIter[result_id] = true;
-      int32_t dst_cap = _VertexMsgLen[result_id];
-      int32_t src_len = _VertexMsgNewLen[result_id];
-      if (_VertexMsgLen[result_id] > 0) {
-        delete [] _VertexMsg[result_id];
-        _VertexMsgLen[result_id] = 0;
-        _VertexMsg[result_id] = NULL;
-      }
-      if (src_len > 0) {
-        _VertexMsg[result_id] = new T [src_len];
-        memcpy(_VertexMsg[result_id], _VertexMsgNew[result_id], sizeof(T)*src_len);
-        _VertexMsgLen[result_id] = src_len;
-        _VertexMsgNewLen[result_id] = 0;
-        delete [] _VertexMsgNew[result_id];
-        _VertexMsgNew[result_id] = NULL;
-      }
+      delete [] (_VertexMsg[result_id]);
+      _VertexMsgLen[result_id] = _VertexMsgNewLen[result_id];
+      _VertexMsg[result_id] = _VertexMsgNew[result_id];
+      // _VertexMsg[result_id] = new T [_VertexMsgNewLen[result_id]];
+      // memcpy(_VertexMsg[result_id], _VertexMsgNew[result_id], 
+      //       sizeof(T)*_VertexMsgNewLen[result_id]);
+      _VertexMsgNewLen[result_id] = 0;
+      _VertexMsgNew[result_id] = NULL;
     }
 
     stop_time_comp();
