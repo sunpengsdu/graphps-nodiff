@@ -8,6 +8,7 @@ all: run
 
 run: *.cpp
 	$(CCOMPILE) -std=c++11  tc.cpp $(CPPFLAGS) $(LIB) $(LDFLAGS)  -o tc
+	$(CCOMPILE) -std=c++11  pagerank.cpp $(CPPFLAGS) $(LIB) $(LDFLAGS)  -o pagerank
 
 clean:
 	-rm tc

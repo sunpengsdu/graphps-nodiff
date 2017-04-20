@@ -53,20 +53,95 @@ bool comp_tc(const int32_t P_ID,
       int32_t id = indices[indptr[i] + j];
       for (k=0; k <  VertexMsgLen[id]; k++) {
         tmp = VertexMsg[id][k];
-        if (tmp == i+start_id) {
-          VertexValue[i+start_id]++;
-          f = 1;
-        }
+        if (tmp == i+start_id) {VertexValue[i+start_id]++; f = 1;}
       }
       n1++;
-      if (n1 > skip && n1 <= skip+c) {
-        result[i].push_back(id);
+      if (n1 > skip && n1 <= skip+c) {result[i].push_back(id);}
+    }
+    if (f == 1) { _Changed_Vertex++;}
+    result[i].shrink_to_fit();
+  }
+  clean_edge(P_ID, EdgeDataNpy);
+
+  for (int32_t k=0; k<(end_id-start_id); k++) {
+    assert (VertexMsgNew[k+start_id] == NULL);
+    VertexMsgNew[k+start_id] = new T [result[k].size()];
+    memcpy(VertexMsgNew[k+start_id], &result[k][0], sizeof(T)*result[k].size());
+    VertexMsgNewLen[k+start_id] = result[k].size();
+  }
+  std::vector<T> result_v;
+  int32_t message_v_size = 0;
+  for (int32_t k=0; k<(end_id-start_id); k++) {
+    if (result[k].size() > 0) {
+      message_v_size++;
+      result_v.push_back(k);
+      result_v.push_back(result[k].size());
+      for (auto & tmp : result[k]) 
+        result_v.push_back(tmp);
+    }
+    result[k].clear();
+    result[k].shrink_to_fit();
+  }
+  result.clear();
+  result.shrink_to_fit();
+  result_v.push_back((int32_t)end_id%10000);
+  result_v.push_back((int32_t)std::floor(end_id*1.0/10000));
+  result_v.push_back((int32_t)start_id%10000);
+  result_v.push_back((int32_t)std::floor(start_id*1.0/10000));
+  _Computing_Num--;
+  if (message_v_size > 0)
+    graphps_sendall<T>(std::ref(result_v), start_id, end_id);
+  return true;
+}
+
+
+template<class T>
+bool comp_pagerank(const int32_t P_ID,
+               std::string DataPath,
+               const int32_t VertexNum,
+               std::vector<T>& VertexValue,
+               std::vector<T*>& VertexMsg,
+               std::vector<int32_t>& VertexMsgLen,
+               std::vector<T*>& VertexMsgNew,
+               std::vector<int32_t>& VertexMsgNewLen,
+               const int32_t* _VertexOut,
+               const int32_t* _VertexIn,
+               const int32_t step) {
+  _Computing_Num++;
+  DataPath += std::to_string(P_ID);
+  DataPath += ".edge.npy";
+  char* EdgeDataNpy = load_edge(P_ID, DataPath);
+  int32_t *EdgeData = reinterpret_cast<int32_t*>(EdgeDataNpy);
+  int32_t start_id = EdgeData[3];
+  int32_t end_id = EdgeData[4];
+  int32_t indices_len = EdgeData[1];
+  int32_t indptr_len = EdgeData[2];
+  int32_t * indices = EdgeData + 5;
+  int32_t * indptr = EdgeData + 5 + indices_len;
+  int32_t vertex_num = VertexNum;
+  std::vector<std::vector<T>> result;
+  for (int32_t i=0; i<end_id-start_id; i++) {
+    result.push_back(std::vector<T>());
+  }
+  int32_t i   = 0;
+  int32_t k   = 0;
+  int32_t tmp = 0;
+  T   rel = 0;
+
+  for (i=0; i < end_id-start_id; i++) {
+    rel = 0;
+    if (step > 0) {
+      for (k = 0; k < indptr[i+1] - indptr[i]; k++) {
+        tmp = indices[indptr[i] + k];
+        rel += VertexMsg[tmp][0]/_VertexOut[tmp];
       }
     }
-    if (f == 1) {
+    rel = rel*0.85 + 1.0/vertex_num;
+    result[i].push_back(rel);
+    if (rel != VertexValue[start_id+i]) {
       _Changed_Vertex++;
+      VertexValue[start_id+i] = rel;
     }
-    result[i].shrink_to_fit();
   }
   clean_edge(P_ID, EdgeDataNpy);
   for (int32_t k=0; k<(end_id-start_id); k++) {
@@ -211,7 +286,7 @@ void GraphPS<T>::init(std::string DataPath,
   else
     COMPRESS_CACHE_LEVEL = 2;
   //#########################
-  COMPRESS_CACHE_LEVEL = 2;
+  COMPRESS_CACHE_LEVEL = 0;
   LOG(INFO) << "data size "  << data_size << " GB, "
             << "cache size " << cache_size << " GB, "
             << "compress level " << COMPRESS_CACHE_LEVEL;

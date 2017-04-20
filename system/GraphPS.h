@@ -20,7 +20,6 @@ bool comp_pagerank(const int32_t P_ID,
                    T* VertexMsgNew,
                    const int32_t* _VertexOut,
                    const int32_t* _VertexIn,
-                   std::vector<bool>& ActiveVector,
                    const int32_t step) {
   // std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
   _Computing_Num++;
@@ -106,7 +105,6 @@ bool comp_sssp(const int32_t P_ID,
                T* VertexMsgNew,
                const int32_t* _VertexOut,
                const int32_t* _VertexIn,
-               std::vector<bool>& ActiveVector,
                const int32_t step) {
   _Computing_Num++;
   DataPath += std::to_string(P_ID);
@@ -136,7 +134,7 @@ bool comp_sssp(const int32_t P_ID,
     min = VertexMsg[start_id+i];
     for (j = 0; j < indptr[i+1] - indptr[i]; j++) {
       tmp = VertexMsg[indices[indptr[i] + j]] + 1;
-      if (ActiveVector[indices[indptr[i]+j]] && min > tmp)
+      if (min > tmp)
         min = tmp;
     }
     result[i] = min;
@@ -182,7 +180,6 @@ bool comp_cc(const int32_t P_ID,
              T* VertexMsgNew,
              const int32_t* _VertexOut,
              const int32_t* _VertexIn,
-             std::vector<bool>& ActiveVector,
              const int32_t step) {
   _Computing_Num++;
   DataPath += std::to_string(P_ID);
@@ -256,7 +253,6 @@ public:
                 T*,
                 const int32_t*,
                 const int32_t*,
-                std::vector<bool>&,
                 const int32_t
                ) = NULL;
   T _FilterThreshold;
@@ -275,7 +271,6 @@ public:
   std::vector<int32_t> _VertexIn;
   std::vector<T> _VertexMsg;
   std::vector<T> _VertexMsgNew;
-  std::vector<bool> _UpdatedLastIter;
   bloom_parameters _bf_parameters;
   std::map<int32_t, bloom_filter> _bf_pool;
   GraphPS();
@@ -318,7 +313,6 @@ void GraphPS<T>::init(std::string DataPath,
     _AllHosts[i] = host_name;
   }
   _Scheduler = _AllHosts[0];
-  _UpdatedLastIter.assign(_VertexNum, true);
   _VertexMsgNew.assign(_VertexNum, 0);
   int32_t n = std::ceil(_PartitionNum*1.0/_num_workers);
   _PartitionID_Start = (_my_rank*n < _PartitionNum) ? _my_rank*n:-1;
@@ -422,7 +416,7 @@ void GraphPS<T>::run() {
 
   init_vertex();
   std::thread graphps_server_mt(graphps_server<T>, std::ref(_VertexMsgNew), std::ref(_VertexMsg));
-  std::vector<int32_t> ActiveVector_V;
+  // std::vector<int32_t> ActiveVector_V;
   std::vector<int32_t> Partitions(_Allocated_Partition.size(), 0);
   float updated_ratio = 1.0;
   int32_t step = 0;
@@ -450,7 +444,7 @@ void GraphPS<T>::run() {
       (*_comp)(P_ID,  _DataPath, _VertexNum,
                _VertexValue.data(), _VertexMsg.data(), _VertexMsgNew.data(),
                _VertexOut.data(), _VertexIn.data(),
-               std::ref(_UpdatedLastIter), step);
+               step);
     }
     while(_Pending_Request > 0) {
       graphps_sleep(10);
@@ -465,11 +459,6 @@ void GraphPS<T>::run() {
     int changed_num_total = 0;
     #pragma omp parallel for num_threads(_ThreadNum)  schedule(static)
     for (int32_t result_id = 0; result_id < _VertexNum; result_id++) {
-      if (_VertexMsgNew[result_id] == _VertexMsg[result_id]) {
-        _UpdatedLastIter[result_id] = false;
-      } else {
-        _UpdatedLastIter[result_id] = true;
-      }
 #ifdef USE_ASYNC
       _VertexMsgNew[result_id] = _VertexMsg[result_id];
 #else
