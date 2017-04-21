@@ -8,7 +8,7 @@
  ============================================================================
  */
 
-#include "system/GraphPS.h"
+#include "../system/GraphPS.h"
 
 using namespace std;
 
