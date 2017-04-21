@@ -13,6 +13,47 @@
 using namespace std;
 
 template<class T>
+bool comp_cc(const int32_t P_ID,
+             std::string DataPath,
+             const int32_t VertexNum,
+             T* VertexValue,
+             T* VertexMsg,
+             T* VertexMsgNew,
+             const int32_t* _VertexOut,
+             const int32_t* _VertexIn,
+             const int32_t step) {
+  int32_t *EdgeData, *indices, *indptr;
+  int32_t start_id, end_id;
+  std::vector<T> result;
+  init_comp<T>(P_ID, DataPath, &EdgeData, &start_id, &end_id, &indices, &indptr, std::ref(result));
+
+  int32_t i   = 0;
+  int32_t j   = 0;
+  T   max = 0;
+  int32_t changed_num = 0;
+  for (i = 0; i < end_id-start_id; i++) {
+    max = VertexMsg[start_id+i];
+    for (j = 0; j < indptr[i+1] - indptr[i]; j++) {
+      if (max < VertexMsg[indices[indptr[i]+j]])
+        max = VertexMsg[indices[indptr[i] + j]];
+    }
+    result[i] = max;
+#ifdef USE_ASYNC
+    VertexMsg[start_id+i] = max;
+#endif
+    if (max != VertexMsg[start_id+i]) {
+      changed_num++;
+    }
+    if (max != VertexValue[start_id+i]) {
+      _Changed_Vertex++;
+      VertexValue[start_id+i] = max;
+    }
+  }
+  end_comp<T>(P_ID, EdgeData, start_id, end_id, changed_num, VertexMsg, VertexMsgNew, std::ref(result));
+  return true;
+}
+
+template<class T>
 class PagerankPS : public GraphPS<T> {
 public:
   PagerankPS():GraphPS<T>() {
